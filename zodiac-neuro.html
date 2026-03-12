@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Твоя нейро-суперсила по знаку зодиака</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  height:100%;height:100dvh;
+  overflow:hidden;
+  background:linear-gradient(180deg,#050510 0%,#07072a 25%,#0a0a30 50%,#0c0c28 75%,#080818 100%);
+  font-family:'DM Sans',sans-serif;color:#fff;
+  user-select:none;-webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:none;
+  overscroll-behavior:none;
+}
+
+canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;will-change:transform}
+
+.wrap{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;background:transparent;height:100%;height:100dvh}
+
+.header{text-align:center;padding:max(12px, env(safe-area-inset-top, 12px)) 20px 0;z-index:10;flex-shrink:0}
+.header h1{
+  font-family:'Cormorant Garamond',Georgia,serif;
+  font-size:clamp(28px,6.5vw,52px);font-weight:700;letter-spacing:0.04em;
+  background:linear-gradient(135deg,#e2e8f0,#a5b4fc,#c4b5fd,#e2e8f0);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  margin-bottom:6px;animation:fadeInUp .9s ease both;
+  filter:drop-shadow(0 0 30px rgba(139,92,246,0.2));
+}
+.header p{
+  font-size:clamp(11px,3vw,16px);color:rgba(255,255,255,0.45);letter-spacing:0.16em;text-transform:uppercase;
+  font-family:'Space Mono',monospace;animation:fadeInUp .9s ease .15s both;
+}
+
+.cards-area{flex:1;position:relative;overflow:hidden;z-index:5;min-height:0}
+.card{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;
+  opacity:0;transform:translateY(50px) scale(0.95);
+  transition:opacity .45s ease,transform .45s ease;
+  pointer-events:none;will-change:transform,opacity;
+}
+.card.active{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.card.prev{transform:translateY(-50px) scale(0.95)}
+
+.card-inner{
+  position:relative;width:100%;max-width:440px;
+  background:rgba(6,6,24,0.85);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border-radius:24px;padding:clamp(24px,5vw,44px) clamp(20px,4vw,32px) clamp(20px,4vw,36px);
+  overflow:hidden;
+}
+.card-glow{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none}
+.card-line{position:absolute;top:0;left:0;right:0;height:1px}
+.card-constellation{position:absolute;top:-5px;right:-5px;width:180px;height:130px;opacity:0.55;z-index:1}
+
+.card-symbol{font-size:clamp(44px,12vw,64px);line-height:1;margin-bottom:8px}
+.card-sign{font-family:'Cormorant Garamond',Georgia,serif;font-size:clamp(28px,7vw,38px);font-weight:700;margin:0 0 2px;letter-spacing:0.03em}
+.card-dates{font-size:clamp(10px,2.5vw,12px);color:rgba(255,255,255,0.35);font-family:'Space Mono',monospace;margin-bottom:clamp(12px,3vw,22px);letter-spacing:0.08em;text-transform:uppercase}
+.card-badge{display:inline-block;padding:6px 16px;border-radius:100px;margin-bottom:clamp(10px,2.5vw,18px)}
+.card-badge span{font-family:'Space Mono',monospace;font-size:clamp(11px,2.8vw,13px);font-weight:600;letter-spacing:0.03em;text-transform:uppercase}
+.card-desc{font-family:'DM Sans',sans-serif;font-size:clamp(13px,3.4vw,15px);line-height:1.68;color:rgba(255,255,255,0.78);margin:0}
+
+.bottom{
+  z-index:10;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:8px 16px max(12px, env(safe-area-inset-bottom, 12px));
+}
+
+.event-banner{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:14px 28px;border-radius:18px;width:100%;max-width:420px;
+  background:linear-gradient(135deg,rgba(99,102,241,0.35),rgba(168,85,247,0.3),rgba(236,72,153,0.25));
+  border:1px solid rgba(168,85,247,0.5);
+  box-shadow:0 0 40px rgba(139,92,246,0.3),0 0 80px rgba(99,102,241,0.15);
+  animation:bannerPulse 3s ease-in-out infinite;
+}
+.banner-label{font-family:'DM Sans',sans-serif;font-size:clamp(9px,2.4vw,11px);font-weight:600;color:rgba(200,180,255,0.8);letter-spacing:0.14em;text-transform:uppercase}
+.banner-title{font-family:'Cormorant Garamond',serif;font-size:clamp(16px,4.2vw,20px);font-weight:700;color:#fff;letter-spacing:0.02em;text-align:center;line-height:1.3;text-shadow:0 0 20px rgba(168,85,247,0.4)}
+.banner-date{font-family:'Space Mono',monospace;font-size:clamp(13px,3.5vw,16px);font-weight:700;background:linear-gradient(135deg,#e879f9,#c084fc,#818cf8,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:0.06em}
+
+.nav-row{display:flex;align-items:center;gap:12px}
+.nav-arrow{
+  width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,0.1);
+  background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.5);font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .2s ease;
+  -webkit-appearance:none;appearance:none;
+}
+.nav-arrow:active{background:rgba(255,255,255,0.15);color:#fff;transform:scale(0.92)}
+
+.dots{display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:200px}
+.dot{
+  width:9px;height:9px;border-radius:50%;cursor:pointer;border:1.5px solid rgba(255,255,255,0.15);
+  background:transparent;transition:all .3s ease;flex-shrink:0;
+}
+.dot.active{transform:scale(1.7);border-color:transparent}
+
+.counter{font-family:'Space Mono',monospace;font-size:11px;color:rgba(255,255,255,0.2);letter-spacing:0.14em}
+
+/* Small phones - tighter layout */
+@media (max-height: 680px) {
+  .header{padding-top:8px}
+  .header h1{font-size:clamp(24px,5.5vw,36px);margin-bottom:2px}
+  .header p{font-size:11px}
+  .card{padding:10px}
+  .card-inner{padding:20px 18px 16px;border-radius:20px}
+  .card-symbol{font-size:40px;margin-bottom:4px}
+  .card-sign{font-size:26px}
+  .card-dates{margin-bottom:10px}
+  .card-badge{padding:5px 14px;margin-bottom:8px}
+  .card-desc{font-size:13px;line-height:1.6}
+  .event-banner{padding:10px 20px;gap:2px;border-radius:14px}
+  .banner-label{font-size:9px}
+  .banner-title{font-size:15px}
+  .banner-date{font-size:13px}
+  .bottom{gap:6px;padding-bottom:8px}
+  .nav-arrow{width:36px;height:36px;font-size:16px}
+}
+
+/* Very small phones (iPhone SE, etc) */
+@media (max-height: 580px) {
+  .header h1{font-size:22px}
+  .card-inner{padding:16px 14px 12px}
+  .card-symbol{font-size:32px;margin-bottom:2px}
+  .card-sign{font-size:22px}
+  .card-dates{font-size:10px;margin-bottom:6px}
+  .card-badge{margin-bottom:6px}
+  .card-badge span{font-size:10px}
+  .card-desc{font-size:12px;line-height:1.55}
+  .card-constellation{width:140px;height:100px;opacity:0.4}
+}
+
+@keyframes fadeInUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bannerPulse{
+  0%,100%{box-shadow:0 0 40px rgba(139,92,246,0.3),0 0 80px rgba(99,102,241,0.15)}
+  50%{box-shadow:0 0 60px rgba(139,92,246,0.45),0 0 110px rgba(99,102,241,0.25)}
+}
+</style>
+</head>
+<body>
+<canvas id="starCanvas"></canvas>
+<div class="wrap">
+  <div class="header">
+    <h1>Твоя нейро-суперсила</h1>
+    <p>по знаку зодиака</p>
+  </div>
+  <div class="cards-area" id="cardsArea"></div>
+  <div class="bottom">
+    <div class="event-banner">
+      <span class="banner-label">Бесплатный мастер-класс</span>
+      <span class="banner-title">ИИ видео и фото. 10 лучших практик нейроконтента</span>
+      <span class="banner-date">18 марта / 19:00 МСК</span>
+    </div>
+    <div class="nav-row">
+      <button class="nav-arrow" id="btnPrev">↑</button>
+      <div class="dots" id="dotsContainer"></div>
+      <button class="nav-arrow" id="btnNext">↓</button>
+    </div>
+    <span class="counter" id="counter">01 / 12</span>
+  </div>
+</div>
+
+<script>
+const ZODIAC = [
+  { sign:"Овен", dates:"21 марта - 19 апреля", symbol:"♈", superpower:"Кинематографичные нейрорилсы",
+    description:"Овны рождены взрывать ленту. Ваша дерзость - идеальное топливо для AI-видео с драматичным светом, резкими переходами и эпичными кадрами. Пока другие снимают себя на фронталку, вы генерируете мини-фильмы, от которых невозможно отлипнуть.",
+    accent:"#ef4444", rgb:"239,68,68", pts:[[30,20],[45,15],[55,30],[50,45],[65,35]] },
+  { sign:"Телец", dates:"20 апреля - 20 мая", symbol:"♉", superpower:"Нейрофото в стиле editorial",
+    description:"Тельцы чувствуют красоту на уровне ДНК. Ваши нейрофотосессии - это не пластиковые картинки, а журнальные обложки. Идеальный свет, дорогая текстура, чувственные кадры. Клиенты покупают глазами, а ваш визуал продает без единого слова.",
+    accent:"#10b981", rgb:"16,185,129", pts:[[25,25],[40,20],[55,25],[45,40],[60,45]] },
+  { sign:"Близнецы", dates:"21 мая - 20 июня", symbol:"♊", superpower:"AI-видео с перевоплощениями",
+    description:"Близнецы - мастера трансформаций. Ваши нейровидео со сменой образов, сплит-скринами и неожиданными переходами залетают в рекомендации. Один ролик - пять версий вас. Аудитория залипает, пересматривает и шерит друзьям.",
+    accent:"#f59e0b", rgb:"245,158,11", pts:[[20,30],[35,15],[35,45],[50,20],[50,40],[65,30]] },
+  { sign:"Рак", dates:"21 июня - 22 июля", symbol:"♋", superpower:"Атмосферные нейросторис",
+    description:"Раки чувствуют людей как никто. Ваши нейровидео для сторис - это не просто картинка с музыкой, а маленький фильм с настроением. Теплый свет, мягкие переходы, эмоция в каждом кадре. Сторис, которые досматривают до конца и пишут в директ.",
+    accent:"#67e8f9", rgb:"103,232,249", pts:[[30,20],[40,30],[35,45],[50,35],[55,50],[45,55]] },
+  { sign:"Лев", dates:"23 июля - 22 августа", symbol:"♌", superpower:"AI-аватар для рилсов",
+    description:"Львы созданы для камеры, даже если камера - нейросеть. Ваш AI-аватар излучает ту же харизму, что и вы. Записывает рилсы, ведет сторис, снимает видеоуроки - пока вы отдыхаете. Цифровой двойник, который продает вашу энергию 24/7.",
+    accent:"#f97316", rgb:"249,115,22", pts:[[25,15],[40,10],[55,20],[45,35],[60,30],[50,50],[35,45]] },
+  { sign:"Дева", dates:"23 августа - 22 сентября", symbol:"♍", superpower:"Идеальные нейрофото с первого промпта",
+    description:"Девы - прирожденные промпт-инженеры для визуала. Ваша дотошность делает нейрофото безупречными. Точный свет, нужная композиция, правильная детализация. Там, где другие генерируют 50 вариантов, вы получаете идеал с первой попытки.",
+    accent:"#06b6d4", rgb:"6,182,212", pts:[[20,20],[35,15],[50,25],[40,40],[55,45],[45,55]] },
+  { sign:"Весы", dates:"23 сентября - 22 октября", symbol:"♎", superpower:"Эстетичный нейровизуал",
+    description:"Весы видят гармонию там, где другие видят хаос. Ваши нейрофото и видео выглядят так, будто их снимал топовый фотограф. Безупречные цвета, баланс, композиция. Лента, на которую подписываются ради эстетики и остаются ради экспертизы.",
+    accent:"#f472b6", rgb:"244,114,182", pts:[[30,25],[45,15],[45,40],[60,25],[55,50]] },
+  { sign:"Скорпион", dates:"23 октября - 21 ноября", symbol:"♏", superpower:"Провокационные нейрорилсы",
+    description:"Скорпионы создают видео, мимо которых невозможно пролистать. Темная эстетика, интрига в первом кадре, неожиданный финал. Ваши нейрорилсы вызывают эмоции - от мурашек до спора в комментариях. А это и есть охваты и вовлечение.",
+    accent:"#a855f7", rgb:"168,85,247", pts:[[20,30],[35,20],[50,30],[55,45],[65,40],[70,55],[60,60]] },
+  { sign:"Стрелец", dates:"22 ноября - 21 декабря", symbol:"♐", superpower:"Эпичный AI-видеопродакшн",
+    description:"Стрельцы мыслят масштабно. Короткий рилс? Нет, мини-фильм с кинематографичной картинкой. Нейросети дают вам голливудские инструменты без бюджета. Ваши AI-видео выглядят так, будто за ними стоит продакшн-студия, а не один человек с ноутбуком.",
+    accent:"#6366f1", rgb:"99,102,241", pts:[[25,35],[40,20],[55,15],[50,35],[65,25],[60,45]] },
+  { sign:"Козерог", dates:"22 декабря - 19 января", symbol:"♑", superpower:"Нейрофото для продающих воронок",
+    description:"Козероги не генерируют красоту ради красоты. Каждое ваше нейрофото работает на задачу. Визуал для лид-магнита, обложка вебинара, карусель для прогрева. Вы строите из нейрокартинок систему, где каждый кадр ведет клиента к покупке.",
+    accent:"#a8a29e", rgb:"168,162,158", pts:[[30,15],[40,25],[35,40],[50,30],[55,45],[45,55]] },
+  { sign:"Водолей", dates:"20 января - 18 февраля", symbol:"♒", superpower:"Экспериментальное нейровидео",
+    description:"Водолеи первыми тестируют все новое. Пока рынок осваивает базовую генерацию, вы уже миксуете стили, нейросети и форматы. Ваш контент опережает тренды на полгода. Аудитория подписывается, чтобы увидеть будущее видео раньше других.",
+    accent:"#22d3ee", rgb:"34,211,238", pts:[[20,25],[35,15],[50,20],[45,35],[60,30],[55,50],[70,40]] },
+  { sign:"Рыбы", dates:"19 февраля - 20 марта", symbol:"♓", superpower:"Чувственные нейровизуалы",
+    description:"Рыбы создают не картинки, а настроение. Ваши нейрофото и видео пропитаны эмоцией. Мягкий свет, глубина, ощущение сна наяву. Люди не просматривают ваш контент - они его проживают. А потом пишут 'хочу так же' и покупают.",
+    accent:"#8b5cf6", rgb:"139,92,246", pts:[[25,30],[40,20],[55,30],[50,45],[65,40],[60,55]] },
+];
+
+const SYMBOLS = ["♈","♉","♊","♋","♌","♍","♎","♏","♐","♑","♒","♓"];
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+// Build constellation SVG - simplified filter for mobile
+function constellationSVG(pts, accent) {
+  const filterDef = isMobile
+    ? '<filter id="sg"><feGaussianBlur stdDeviation="1.5"/></filter>'
+    : '<filter id="sg"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+
+  let lines = pts.map((p,i) => i < pts.length-1 ?
+    `<line x1="${p[0]}" y1="${p[1]}" x2="${pts[i+1][0]}" y2="${pts[i+1][1]}" stroke="${accent}" stroke-width="0.7" stroke-opacity="0.6"/>` : ''
+  ).join('');
+
+  let circles = pts.map((p,i) => {
+    if (isMobile) {
+      return `<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="${accent}" opacity="0.8" filter="url(#sg)"/>`;
+    }
+    return `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${accent}" opacity="0.12"><animate attributeName="r" values="4;7;4" dur="${2.5+i*0.4}s" repeatCount="indefinite"/></circle>` +
+           `<circle cx="${p[0]}" cy="${p[1]}" r="2" fill="${accent}" opacity="1" filter="url(#sg)"><animate attributeName="r" values="1.6;2.4;1.6" dur="${2+i*0.3}s" repeatCount="indefinite"/></circle>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 100 70" class="card-constellation"><defs>${filterDef}</defs>${lines}${circles}</svg>`;
+}
+
+// Build cards
+const area = document.getElementById('cardsArea');
+ZODIAC.forEach((z, i) => {
+  const card = document.createElement('div');
+  card.className = 'card' + (i === 0 ? ' active' : '');
+  card.dataset.index = i;
+  card.innerHTML = `
+    <div class="card-inner" style="border:1px solid rgba(${z.rgb},0.2);box-shadow:0 0 60px rgba(${z.rgb},0.12),inset 0 1px 0 rgba(255,255,255,0.06)">
+      <div class="card-glow" style="background:radial-gradient(ellipse at 25% 15%, rgba(${z.rgb},0.14) 0%, transparent 55%)"></div>
+      <div class="card-line" style="background:linear-gradient(90deg, transparent, rgba(${z.rgb},0.5), transparent)"></div>
+      ${constellationSVG(z.pts, z.accent)}
+      <div style="position:relative;z-index:2">
+        <div class="card-symbol" style="filter:drop-shadow(0 0 20px rgba(${z.rgb},0.6))">${z.symbol}</div>
+        <h2 class="card-sign">${z.sign}</h2>
+        <div class="card-dates">${z.dates}</div>
+        <div class="card-badge" style="background:linear-gradient(135deg, rgba(${z.rgb},0.28), rgba(${z.rgb},0.08));border:1px solid rgba(${z.rgb},0.45)">
+          <span style="color:${z.accent}">${z.superpower}</span>
+        </div>
+        <p class="card-desc">${z.description}</p>
+      </div>
+    </div>
+  `;
+  area.appendChild(card);
+});
+
+// Build dots
+const dotsC = document.getElementById('dotsContainer');
+ZODIAC.forEach((z, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.title = z.sign;
+  if (i === 0) { d.style.background = z.accent; d.style.boxShadow = `0 0 16px rgba(${z.rgb},0.7)`; }
+  d.addEventListener('click', () => goTo(i));
+  dotsC.appendChild(d);
+});
+
+let current = 0;
+let direction = 1;
+let isAnimating = false;
+const cards = document.querySelectorAll('.card');
+const dots = document.querySelectorAll('.dot');
+const counter = document.getElementById('counter');
+
+function updateView() {
+  if (isAnimating) return;
+  isAnimating = true;
+  setTimeout(() => { isAnimating = false; }, 450);
+
+  cards.forEach((c, i) => {
+    c.classList.remove('active', 'prev');
+    if (i === current) c.classList.add('active');
+    else if ((direction > 0 && i < current) || (direction < 0 && i > current)) c.classList.add('prev');
+  });
+  dots.forEach((d, i) => {
+    d.classList.toggle('active', i === current);
+    d.style.background = i === current ? ZODIAC[i].accent : 'transparent';
+    d.style.boxShadow = i === current ? `0 0 16px rgba(${ZODIAC[i].rgb},0.7)` : 'none';
+  });
+  counter.textContent = String(current + 1).padStart(2, '0') + ' / 12';
+}
+
+function goTo(i) { if (i === current || isAnimating) return; direction = i > current ? 1 : -1; current = i; updateView(); }
+function next() { if (isAnimating) return; direction = 1; current = (current + 1) % 12; updateView(); }
+function prev() { if (isAnimating) return; direction = -1; current = (current - 1 + 12) % 12; updateView(); }
+
+document.getElementById('btnNext').addEventListener('click', next);
+document.getElementById('btnPrev').addEventListener('click', prev);
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prev();
+});
+
+// Wheel - throttled
+let lastWheel = 0;
+document.addEventListener('wheel', e => {
+  const now = Date.now(); if (now - lastWheel < 600) return; lastWheel = now;
+  if (e.deltaY > 0) next(); else prev();
+}, { passive: true });
+
+// Touch - improved swipe detection
+let touchY = null;
+let touchX = null;
+let touchStartTime = 0;
+
+document.addEventListener('touchstart', e => {
+  touchY = e.touches[0].clientY;
+  touchX = e.touches[0].clientX;
+  touchStartTime = Date.now();
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  // Prevent native scroll/bounce
+  if (touchY !== null) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', e => {
+  if (touchY === null) return;
+  const diffY = touchY - e.changedTouches[0].clientY;
+  const diffX = touchX - e.changedTouches[0].clientX;
+  const elapsed = Date.now() - touchStartTime;
+
+  // Only trigger if vertical swipe is dominant and gesture is quick enough
+  if (Math.abs(diffY) > 30 && Math.abs(diffY) > Math.abs(diffX) * 1.2 && elapsed < 500) {
+    if (diffY > 0) next(); else prev();
+  }
+  touchY = null;
+  touchX = null;
+}, { passive: true });
+
+// === STARFIELD - performance-optimized ===
+const canvas = document.getElementById('starCanvas');
+const ctx = canvas.getContext('2d', { alpha: true });
+let animId;
+const stars = [], floaters = [], shooters = [];
+
+// Fewer stars on mobile
+const STAR_COUNT = isMobile ? 200 : 500;
+const FLOATER_COUNT = isMobile ? 12 : 24;
+
+let cw, ch;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2);
+  cw = window.innerWidth;
+  ch = window.innerHeight;
+  canvas.width = cw * dpr;
+  canvas.height = ch * dpr;
+  canvas.style.width = cw + 'px';
+  canvas.style.height = ch + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+
+let resizeTimeout;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(resize, 150);
+});
+
+// Also fix iOS Safari address bar resize
+window.addEventListener('orientationchange', () => {
+  setTimeout(resize, 300);
+});
+
+for (let i = 0; i < STAR_COUNT; i++) {
+  const bright = Math.random() < (isMobile ? 0.1 : 0.15);
+  const cr = Math.random();
+  let color;
+  if (cr < 0.15) color = [170,195,255];
+  else if (cr < 0.28) color = [255,210,170];
+  else if (cr < 0.38) color = [210,180,255];
+  else if (cr < 0.42) color = [180,255,220];
+  else color = [255,255,255];
+  stars.push({ x: Math.random(), y: Math.random(),
+    r: bright ? Math.random()*2.2+0.8 : Math.random()*1.1+0.2,
+    phase: Math.random()*Math.PI*2, color, bright, ts: Math.random()*2.5+0.4 });
+}
+
+for (let i = 0; i < FLOATER_COUNT; i++) {
+  floaters.push({ s: SYMBOLS[i%12], x: Math.random(), y: Math.random(),
+    sz: Math.random()*28+14, op: Math.random()*0.06+0.02,
+    dx: (Math.random()-0.5)*0.00008, dy: (Math.random()-0.5)*0.00006,
+    rs: (Math.random()-0.5)*0.0004, ph: Math.random()*Math.PI*2, ps: Math.random()*0.9+0.3 });
+}
+
+function spawnShoot() {
+  return { x: Math.random()*0.8, y: Math.random()*0.5,
+    len: Math.random()*80+40, sp: Math.random()*4+2.5,
+    a: Math.PI*0.15+Math.random()*0.35, life: 1, dec: Math.random()*0.014+0.008 };
+}
+let lastShoot = 0;
+
+// Frame skip on mobile for better perf
+let frameCount = 0;
+const SKIP = isMobile ? 1 : 0; // draw every other frame on mobile
+
+function animate(t) {
+  animId = requestAnimationFrame(animate);
+
+  frameCount++;
+  if (isMobile && frameCount % 2 !== 0) return;
+
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Nebulae - simplified on mobile
+  if (!isMobile) {
+    let n = ctx.createRadialGradient(cw*0.15,ch*0.25,0,cw*0.15,ch*0.25,cw*0.5);
+    n.addColorStop(0,"rgba(99,102,241,0.06)"); n.addColorStop(0.4,"rgba(139,92,246,0.03)"); n.addColorStop(1,"transparent");
+    ctx.fillStyle = n; ctx.fillRect(0,0,cw,ch);
+    n = ctx.createRadialGradient(cw*0.8,ch*0.55,0,cw*0.8,ch*0.55,cw*0.4);
+    n.addColorStop(0,"rgba(6,182,212,0.05)"); n.addColorStop(0.5,"rgba(59,130,246,0.02)"); n.addColorStop(1,"transparent");
+    ctx.fillStyle = n; ctx.fillRect(0,0,cw,ch);
+    n = ctx.createRadialGradient(cw*0.5,ch*0.8,0,cw*0.5,ch*0.8,cw*0.35);
+    n.addColorStop(0,"rgba(168,85,247,0.04)"); n.addColorStop(1,"transparent");
+    ctx.fillStyle = n; ctx.fillRect(0,0,cw,ch);
+  } else {
+    // Single simpler nebula on mobile
+    let n = ctx.createRadialGradient(cw*0.3,ch*0.3,0,cw*0.3,ch*0.3,cw*0.6);
+    n.addColorStop(0,"rgba(99,102,241,0.05)"); n.addColorStop(1,"transparent");
+    ctx.fillStyle = n; ctx.fillRect(0,0,cw,ch);
+  }
+
+  // Stars - use normalized positions
+  stars.forEach(s => {
+    const sx = s.x * cw;
+    const sy = s.y * ch;
+    const fl = 0.35 + 0.65*Math.sin(t*0.001*s.ts + s.phase);
+    const [cr,cg,cb] = s.color;
+    ctx.beginPath(); ctx.arc(sx,sy,s.r,0,Math.PI*2);
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},${fl*0.9})`; ctx.fill();
+    if (s.bright && !isMobile) {
+      ctx.beginPath(); ctx.arc(sx,sy,s.r*4,0,Math.PI*2);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${fl*0.12})`; ctx.fill();
+      ctx.save(); ctx.globalAlpha = fl*0.18;
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},1)`; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(sx-s.r*6,sy); ctx.lineTo(sx+s.r*6,sy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx,sy-s.r*6); ctx.lineTo(sx,sy+s.r*6); ctx.stroke();
+      ctx.restore();
+    }
+  });
+
+  // Zodiac floaters
+  floaters.forEach(z => {
+    z.x += z.dx; z.y += z.dy;
+    if (z.x < -0.05) z.x = 1.05; if (z.x > 1.05) z.x = -0.05;
+    if (z.y < -0.05) z.y = 1.05; if (z.y > 1.05) z.y = -0.05;
+    const pulse = 0.5 + 0.5*Math.sin(t*0.001*z.ps + z.ph);
+    ctx.save(); ctx.globalAlpha = z.op*pulse;
+    ctx.font = `${z.sz}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    if (!isMobile) { ctx.shadowColor = "rgba(139,92,246,0.3)"; ctx.shadowBlur = 10; }
+    ctx.fillStyle = "rgba(180,190,255,1)";
+    const fx = z.x * cw, fy = z.y * ch;
+    ctx.translate(fx, fy); ctx.rotate(t*z.rs);
+    ctx.fillText(z.s, 0, 0); ctx.restore();
+  });
+
+  // Shooting stars - fewer on mobile
+  const shootInterval = isMobile ? 4000 : 2500;
+  if (t - lastShoot > shootInterval + Math.random()*3000) {
+    shooters.push(spawnShoot());
+    if (!isMobile && Math.random() < 0.3) shooters.push(spawnShoot());
+    lastShoot = t;
+  }
+  for (let i = shooters.length-1; i >= 0; i--) {
+    const ss = shooters[i];
+    const sx = ss.x * cw, sy = ss.y * ch;
+    ss.x += Math.cos(ss.a)*ss.sp/cw; ss.y += Math.sin(ss.a)*ss.sp/ch; ss.life -= ss.dec;
+    if (ss.life <= 0) { shooters.splice(i,1); continue; }
+    const ex = sx - Math.cos(ss.a)*ss.len*ss.life;
+    const ey = sy - Math.sin(ss.a)*ss.len*ss.life;
+    const g = ctx.createLinearGradient(sx,sy,ex,ey);
+    g.addColorStop(0,`rgba(255,255,255,${ss.life*0.9})`);
+    g.addColorStop(0.3,`rgba(200,220,255,${ss.life*0.4})`);
+    g.addColorStop(1,"rgba(255,255,255,0)");
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey);
+    ctx.strokeStyle = g; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx,sy,2,0,Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,255,${ss.life})`; ctx.fill();
+  }
+}
+animId = requestAnimationFrame(animate);
+</script>
+</body>
+</html>
