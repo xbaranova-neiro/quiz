@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Нейрофрилансер - лови заказы!</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  height:100%;height:100dvh;
+  overflow:hidden;
+  background:#0f0e1a;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  color:#fff;
+  user-select:none;-webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:none;
+  overscroll-behavior:none;
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+}
+canvas{
+  display:block;
+  position:fixed;
+  top:0;left:0;
+  width:100%;height:100%;height:100dvh;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const C=document.getElementById('c');
+const X=C.getContext('2d');
+let W,H,dpr;
+const isMobile='ontouchstart' in window;
+
+// Safe area insets
+let safeTop=0,safeBottom=0;
+function updateSafeAreas(){
+  const s=getComputedStyle(document.documentElement);
+  safeTop=parseInt(s.getPropertyValue('env(safe-area-inset-top)'))||0;
+  safeBottom=parseInt(s.getPropertyValue('env(safe-area-inset-bottom)'))||0;
+}
+
+let resizeTimeout=null;
+function resize(){
+  if(resizeTimeout) clearTimeout(resizeTimeout);
+  resizeTimeout=setTimeout(doResize,100);
+  doResize();
+}
+function doResize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  C.width=W*dpr;C.height=H*dpr;
+  C.style.width=W+'px';C.style.height=H+'px';
+  X.setTransform(dpr,0,0,dpr,0,0);
+  updateSafeAreas();
+  recalc();
+}
+
+// ===== LAYOUT =====
+let FLOOR_Y,HUD_H,PLAY_TOP,PLAY_H,LANE_W,LANES_X;
+const NUM_LANES=4;
+
+function recalc(){
+  const topPad=Math.max(safeTop,8);
+  HUD_H=58+topPad;
+  // Adaptive floor - leave room for controls on small screens
+  const bottomPad=Math.max(safeBottom,10);
+  FLOOR_Y=H-bottomPad-(isMobile?75:80);
+  PLAY_TOP=HUD_H+6;
+  PLAY_H=FLOOR_Y-PLAY_TOP;
+  // Lanes: wider on phones, use more screen
+  LANE_W=Math.min(85,Math.floor((W*0.85)/NUM_LANES));
+  LANES_X=Math.round((W-LANE_W*NUM_LANES)/2);
+}
+
+doResize();
+window.addEventListener('resize',resize);
+window.addEventListener('orientationchange',()=>setTimeout(doResize,200));
+
+// ===== ORDER DATA - only neiro photo & video =====
+const ORDER_TYPES=[
+  // PHOTO - tier 0 (Новичок)
+  {cat:'photo',emoji:'📸',label:'Фото для WB',price:1500,color:'#60a5fa',tier:0},
+  {cat:'photo',emoji:'📸',label:'Фото для Ozon',price:2000,color:'#60a5fa',tier:0},
+  {cat:'photo',emoji:'📸',label:'Фото для меню',price:2500,color:'#818cf8',tier:0},
+  // PHOTO - tier 1 (Фрилансер)
+  {cat:'photo',emoji:'📸',label:'Фото для блога',price:3000,color:'#818cf8',tier:1},
+  {cat:'photo',emoji:'📸',label:'Фото для сайта',price:3500,color:'#a78bfa',tier:1},
+  {cat:'photo',emoji:'📸',label:'Фотосессия бьюти',price:5000,color:'#a78bfa',tier:1},
+  // PHOTO - tier 2 (Специалист)
+  {cat:'photo',emoji:'📸',label:'Фото для бренда',price:7000,color:'#c084fc',tier:2},
+  {cat:'photo',emoji:'📸',label:'Каталог 20 фото',price:10000,color:'#c084fc',tier:2},
+  // PHOTO - tier 3 (Эксперт)
+  {cat:'photo',emoji:'📸',label:'Лукбук бренда',price:15000,color:'#e879f9',tier:3},
+  {cat:'photo',emoji:'📸',label:'AI-каталог 50 фото',price:20000,color:'#e879f9',tier:3},
+
+  // VIDEO - tier 0 (Новичок)
+  {cat:'video',emoji:'🎬',label:'Рилс 15 сек',price:2000,color:'#34d399',tier:0},
+  {cat:'video',emoji:'🎬',label:'Видео для сторис',price:2500,color:'#34d399',tier:0},
+  {cat:'video',emoji:'🎬',label:'Рилс для салона',price:3000,color:'#2dd4bf',tier:0},
+  // VIDEO - tier 1 (Фрилансер)
+  {cat:'video',emoji:'🎬',label:'Видео для кафе',price:4000,color:'#2dd4bf',tier:1},
+  {cat:'video',emoji:'🎬',label:'Промо 30 сек',price:5000,color:'#22d3ee',tier:1},
+  {cat:'video',emoji:'🎬',label:'Видео для курса',price:6000,color:'#22d3ee',tier:1},
+  // VIDEO - tier 2 (Специалист)
+  {cat:'video',emoji:'🎬',label:'Реклама 60 сек',price:8000,color:'#06b6d4',tier:2},
+  {cat:'video',emoji:'🎬',label:'Видео для бренда',price:12000,color:'#06b6d4',tier:2},
+  // VIDEO - tier 3 (Эксперт)
+  {cat:'video',emoji:'🎬',label:'Промо под ключ',price:18000,color:'#0ea5e9',tier:3},
+  {cat:'video',emoji:'🎬',label:'Рекламный фильм',price:25000,color:'#0ea5e9',tier:3},
+];
+
+const LEVELS=[
+  {name:'Новичок',tier:0,color:'#60a5fa',need:0},
+  {name:'Фрилансер',tier:1,color:'#a78bfa',need:8},
+  {name:'Специалист',tier:2,color:'#e879f9',need:18},
+  {name:'Эксперт',tier:3,color:'#f59e0b',need:30},
+];
+
+const TRASH_TYPES=[
+  {emoji:'🚫',label:'Спам'},
+  {emoji:'💩',label:'Бесплатно'},
+  {emoji:'🤡',label:'За отзыв'},
+  {emoji:'👎',label:'За 100₽'},
+];
+
+// ===== STATE =====
+let state='start';
+let timeLeft=60;
+let money=0;
+let ordersCompleted=0;
+let currentLevel=0;
+let lives=3;
+let playerLane=1;
+let playerVisualX=0;
+
+let items=[];
+let spawnTimer=0;
+let spawnInterval=1.3;
+let fallSpeed=2.2;
+
+let moneyPops=[];
+let sparkles=[];
+let shakeTimer=0;
+let levelUpTimer=0;
+let comboCount=0;
+let comboTimer=0;
+let flashColor=null;
+let flashTimer=0;
+
+let timerAcc=0;
+let lastTime=0;
+let countdownVal=3;
+let countdownTimer=0;
+
+// ===== HELPERS =====
+function rr(x,y,w,h,r){
+  X.beginPath();
+  X.moveTo(x+r,y);X.lineTo(x+w-r,y);X.quadraticCurveTo(x+w,y,x+w,y+r);
+  X.lineTo(x+w,y+h-r);X.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  X.lineTo(x+r,y+h);X.quadraticCurveTo(x,y+h,x,y+h-r);
+  X.lineTo(x,y+r);X.quadraticCurveTo(x,y,x+r,y);X.closePath();
+}
+
+function laneX(lane){
+  return LANES_X+lane*LANE_W+LANE_W/2;
+}
+
+function laneFromX(screenX){
+  // Find which lane a screen X coordinate is closest to
+  let best=0,bestD=Infinity;
+  for(let i=0;i<NUM_LANES;i++){
+    const d=Math.abs(screenX-laneX(i));
+    if(d<bestD){bestD=d;best=i;}
+  }
+  return best;
+}
+
+function getAvailableOrders(){
+  return ORDER_TYPES.filter(o=>o.tier<=LEVELS[currentLevel].tier);
+}
+
+function getLevel(){
+  for(let i=LEVELS.length-1;i>=0;i--){
+    if(ordersCompleted>=LEVELS[i].need) return i;
+  }
+  return 0;
+}
+
+function vibrate(ms){
+  try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){}
+}
+
+function formatPrice(p){
+  if(p>=1000) return Math.round(p/1000)+'к';
+  return p+'';
+}
+
+// ===== DRAWING =====
+function drawBg(){
+  const g=X.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#0f0e1a');g.addColorStop(0.6,'#16152a');g.addColorStop(1,'#1a1930');
+  X.fillStyle=g;X.fillRect(0,0,W,H);
+
+  // Lane dividers - subtle
+  X.strokeStyle='rgba(255,255,255,0.04)';
+  X.lineWidth=1;
+  for(let i=0;i<=NUM_LANES;i++){
+    const lx=LANES_X+i*LANE_W;
+    X.beginPath();X.moveTo(lx,PLAY_TOP);X.lineTo(lx,FLOOR_Y);X.stroke();
+  }
+
+  // Floor glow
+  X.fillStyle='rgba(139,92,246,0.04)';
+  X.fillRect(0,FLOOR_Y,W,H-FLOOR_Y);
+  X.strokeStyle='rgba(139,92,246,0.12)';
+  X.lineWidth=2;
+  X.beginPath();X.moveTo(0,FLOOR_Y);X.lineTo(W,FLOOR_Y);X.stroke();
+
+  // Lane highlight under player
+  const plx=laneX(playerLane);
+  X.fillStyle='rgba(139,92,246,0.06)';
+  X.fillRect(plx-LANE_W/2,PLAY_TOP,LANE_W,FLOOR_Y-PLAY_TOP);
+}
+
+function drawPlayer(){
+  const px=playerVisualX;
+  const py=FLOOR_Y;
+  const s=Math.min(1,W/380)*0.9;
+
+  // Shadow
+  X.fillStyle='rgba(139,92,246,0.1)';
+  X.beginPath();X.ellipse(px,py+8,LANE_W*0.4,6,0,0,Math.PI*2);X.fill();
+
+  // Laptop base
+  const lw=36*s,lh=5*s;
+  X.fillStyle='#555';
+  rr(px-lw/2,py-6,lw,lh,2);X.fill();
+
+  // Laptop screen
+  const sw=34*s,sh=24*s;
+  X.fillStyle='#e0e0e0';
+  rr(px-sw/2,py-6-sh,sw,sh,3);X.fill();
+  X.fillStyle='#7c3aed';
+  rr(px-sw/2+3,py-6-sh+3,sw-6,sh-6,2);X.fill();
+
+  // Body
+  X.fillStyle='#a78bfa';
+  rr(px-13*s,py-52*s,26*s,30*s,7*s);X.fill();
+
+  // Head
+  X.fillStyle='#ffe0bd';
+  X.beginPath();X.arc(px,py-64*s,14*s,0,Math.PI*2);X.fill();
+
+  // Hair
+  X.fillStyle='#5a3a1a';
+  X.beginPath();X.arc(px,py-68*s,14*s,Math.PI,0);X.fill();
+  // Ponytail
+  X.beginPath();X.ellipse(px+12*s,py-66*s,3.5*s,9*s,0.3,0,Math.PI*2);X.fill();
+
+  // Eyes
+  X.fillStyle='#333';
+  X.beginPath();X.arc(px-4.5*s,py-65*s,1.8*s,0,Math.PI*2);X.fill();
+  X.beginPath();X.arc(px+4.5*s,py-65*s,1.8*s,0,Math.PI*2);X.fill();
+
+  // Smile
+  X.strokeStyle='#c07040';X.lineWidth=1.5*s;
+  X.beginPath();X.arc(px,py-59*s,4*s,0.15*Math.PI,0.85*Math.PI);X.stroke();
+
+  // Arms reaching to laptop
+  X.strokeStyle='#ffe0bd';X.lineWidth=3.5*s;X.lineCap='round';
+  X.beginPath();X.moveTo(px-13*s,py-42*s);X.lineTo(px-16*s,py-18*s);X.stroke();
+  X.beginPath();X.moveTo(px+13*s,py-42*s);X.lineTo(px+16*s,py-18*s);X.stroke();
+}
+
+function drawItem(item){
+  const ix=item.x;
+  const iy=item.y;
+  const sz=Math.min(54,LANE_W*0.68);
+
+  if(item.isTrash){
+    // Trash card
+    X.fillStyle='rgba(239,68,68,0.1)';
+    X.beginPath();X.arc(ix,iy,sz/2+3,0,Math.PI*2);X.fill();
+
+    X.fillStyle='rgba(30,20,40,0.88)';
+    rr(ix-sz/2,iy-sz/2,sz,sz,11);X.fill();
+    X.strokeStyle='rgba(239,68,68,0.45)';X.lineWidth=1.5;
+    rr(ix-sz/2,iy-sz/2,sz,sz,11);X.stroke();
+
+    X.font=Math.round(sz*0.4)+'px sans-serif';
+    X.textAlign='center';X.textBaseline='middle';
+    X.fillText(item.data.emoji,ix,iy-3);
+
+    X.fillStyle='#f87171';
+    X.font='bold '+Math.max(9,Math.round(sz*0.17))+'px sans-serif';
+    X.fillText(item.data.label,ix,iy+sz*0.3);
+    X.textAlign='left';X.textBaseline='alphabetic';
+    return;
+  }
+
+  const order=item.data;
+
+  // Glow
+  X.fillStyle=order.color+'14';
+  X.beginPath();X.arc(ix,iy,sz/2+5,0,Math.PI*2);X.fill();
+
+  // Card bg
+  X.fillStyle='rgba(22,20,42,0.92)';
+  rr(ix-sz/2,iy-sz/2,sz,sz,11);X.fill();
+
+  // Border
+  X.strokeStyle=order.color+'77';X.lineWidth=1.5;
+  rr(ix-sz/2,iy-sz/2,sz,sz,11);X.stroke();
+
+  // Top color stripe
+  X.fillStyle=order.color+'44';
+  rr(ix-sz/2,iy-sz/2,sz,5,11);X.fill();
+
+  // Emoji
+  X.font=Math.round(sz*0.36)+'px sans-serif';
+  X.textAlign='center';X.textBaseline='middle';
+  X.fillText(order.emoji,ix,iy-5);
+
+  // Price
+  X.fillStyle=order.color;
+  X.font='bold '+Math.max(10,Math.round(sz*0.2))+'px sans-serif';
+  X.fillText('+'+formatPrice(order.price),ix,iy+sz*0.31);
+
+  X.textAlign='left';X.textBaseline='alphabetic';
+}
+
+function drawHUD(){
+  const topPad=Math.max(safeTop,8);
+  X.fillStyle='rgba(15,14,26,0.94)';
+  X.fillRect(0,0,W,HUD_H);
+
+  const baseY=topPad+18;
+
+  // Timer
+  X.textAlign='left';
+  X.fillStyle=timeLeft<=10?'#f87171':'rgba(255,255,255,0.7)';
+  X.font='bold 21px sans-serif';
+  X.fillText('⏱ '+timeLeft,14,baseY);
+
+  // Money
+  X.textAlign='right';
+  X.fillStyle='#34d399';
+  X.font='bold 21px sans-serif';
+  X.fillText(money.toLocaleString('ru-RU')+' ₽',W-14,baseY);
+
+  // Level - center
+  X.textAlign='center';
+  const lv=LEVELS[currentLevel];
+  X.fillStyle=lv.color;
+  X.font='bold 11px sans-serif';
+  X.fillText(lv.name,W/2,baseY-4);
+
+  // XP bar
+  const barW=Math.min(110,W*0.28);
+  const barH=4;
+  const barX=W/2-barW/2;
+  const barY=baseY+4;
+  X.fillStyle='rgba(255,255,255,0.08)';
+  rr(barX,barY,barW,barH,2);X.fill();
+  const nextNeed=currentLevel<LEVELS.length-1?LEVELS[currentLevel+1].need:999;
+  const prevNeed=LEVELS[currentLevel].need;
+  const prog=Math.min((ordersCompleted-prevNeed)/(nextNeed-prevNeed),1);
+  X.fillStyle=lv.color;
+  if(barW*prog>2){rr(barX,barY,barW*prog,barH,2);X.fill();}
+
+  // Lives - second row
+  const row2Y=baseY+22;
+  X.textAlign='left';
+  X.font='14px sans-serif';
+  let hStr='';
+  for(let i=0;i<3;i++) hStr+=i<lives?'❤️':'🖤';
+  X.fillText(hStr,14,row2Y);
+
+  // Combo
+  if(comboCount>=3){
+    X.textAlign='right';
+    X.fillStyle='#f59e0b';
+    X.font='bold 12px sans-serif';
+    X.fillText('x'+comboCount+' COMBO!',W-14,row2Y);
+  }
+
+  // Divider line
+  X.strokeStyle='rgba(139,92,246,0.08)';X.lineWidth=1;
+  X.beginPath();X.moveTo(0,HUD_H);X.lineTo(W,HUD_H);X.stroke();
+  X.textAlign='left';
+}
+
+function drawMobileControls(){
+  if(!isMobile) return;
+  const cy=FLOOR_Y+(H-FLOOR_Y)/2+10;
+  X.globalAlpha=0.12;
+  X.fillStyle='#fff';
+  X.font='32px sans-serif';
+  X.textAlign='center';
+  X.fillText('◀',LANES_X-28,cy);
+  X.fillText('▶',LANES_X+LANE_W*NUM_LANES+28,cy);
+  X.globalAlpha=1;X.textAlign='left';
+}
+
+// ===== SPAWNING =====
+function spawnItem(){
+  const lane=Math.floor(Math.random()*NUM_LANES);
+
+  // Avoid stacking - check if something is already very close in this lane
+  const tooClose=items.some(it=>it.lane===lane && it.y<PLAY_TOP+60);
+  if(tooClose) return; // skip, will try next tick
+
+  if(Math.random()<0.18){
+    const trash=TRASH_TYPES[Math.floor(Math.random()*TRASH_TYPES.length)];
+    items.push({
+      x:laneX(lane),y:PLAY_TOP-30,
+      lane,isTrash:true,data:trash,
+      speed:fallSpeed*(0.85+Math.random()*0.3)
+    });
+    return;
+  }
+
+  const avail=getAvailableOrders();
+  const order=avail[Math.floor(Math.random()*avail.length)];
+  items.push({
+    x:laneX(lane),y:PLAY_TOP-30,
+    lane,isTrash:false,data:order,
+    speed:fallSpeed*(0.85+Math.random()*0.3)
+  });
+}
+
+// ===== INPUT =====
+let touchActive=false;
+
+C.addEventListener('touchstart',(e)=>{
+  e.preventDefault();
+  const t=e.touches[0];
+  const tx=t.clientX,ty=t.clientY;
+
+  if(state==='start'){startCountdown();return;}
+  if(state==='end'){handleEndTap(tx,ty);return;}
+  if(state!=='play') return;
+
+  // Direct lane targeting - tap to move to the closest lane
+  const targetLane=laneFromX(tx);
+  playerLane=targetLane;
+  touchActive=true;
+},{passive:false});
+
+C.addEventListener('touchmove',(e)=>{
+  e.preventDefault();
+  if(state!=='play'||!touchActive) return;
+  const t=e.touches[0];
+  // Track finger position to lane
+  playerLane=laneFromX(t.clientX);
+},{passive:false});
+
+C.addEventListener('touchend',(e)=>{
+  e.preventDefault();
+  touchActive=false;
+},{passive:false});
+
+// Desktop
+document.addEventListener('keydown',(e)=>{
+  if(state==='start'){startCountdown();return;}
+  if(state==='end'&&(e.key===' '||e.key==='Enter')){restartGame();return;}
+  if(state!=='play') return;
+  if((e.key==='ArrowLeft'||e.key==='a')&&playerLane>0) playerLane--;
+  if((e.key==='ArrowRight'||e.key==='d')&&playerLane<NUM_LANES-1) playerLane++;
+});
+
+C.addEventListener('click',(e)=>{
+  if(state==='start'){startCountdown();return;}
+  if(state==='end'){handleEndTap(e.clientX,e.clientY);return;}
+  if(state!=='play') return;
+  playerLane=laneFromX(e.clientX);
+});
+
+function handleEndTap(tx,ty){
+  // CTA button hitbox
+  const btnW=Math.min(280,W*0.78),btnH=50;
+  const btnX=W/2-btnW/2,btnY=H*0.64;
+  if(tx>=btnX&&tx<=btnX+btnW&&ty>=btnY&&ty<=btnY+btnH){
+    window.open('https://xbaranova-neiro.ru/neirocontent?utm_source=tg&utm_medium=game','_blank');
+    return;
+  }
+  // Replay hitbox
+  const replayY=btnY+btnH+10;
+  if(ty>=replayY&&ty<=replayY+40){
+    restartGame();
+  }
+}
+
+function startCountdown(){
+  state='countdown';countdownVal=3;countdownTimer=Date.now();
+}
+
+function restartGame(){
+  money=0;ordersCompleted=0;currentLevel=0;lives=3;
+  timeLeft=60;items=[];moneyPops=[];sparkles=[];
+  spawnTimer=0;spawnInterval=1.3;fallSpeed=2.2;
+  comboCount=0;comboTimer=0;playerLane=1;
+  state='countdown';countdownVal=3;countdownTimer=Date.now();
+}
+
+// ===== SCREENS =====
+function drawStart(){
+  drawBg();
+  X.fillStyle='rgba(10,10,20,0.55)';X.fillRect(0,0,W,H);
+
+  X.textAlign='center';
+
+  X.font='60px sans-serif';
+  X.fillText('💼',W/2,H*0.18);
+
+  X.fillStyle='#fff';
+  X.font='bold '+Math.min(28,W*0.07)+'px sans-serif';
+  X.fillText('Лови заказы!',W/2,H*0.29);
+
+  X.fillStyle='rgba(255,255,255,0.45)';
+  X.font='400 '+Math.min(14,W*0.037)+'px sans-serif';
+  const lines=[
+    'Двигай фрилансера - лови заказы',
+    'на нейрофото и нейровидео.',
+    'Не хватай спам! Расти в уровне.',
+    '60 секунд - покажи свой заработок!'
+  ];
+  lines.forEach((l,i)=>X.fillText(l,W/2,H*0.36+i*22));
+
+  // Controls hint
+  X.fillStyle='rgba(255,255,255,0.2)';
+  X.font='400 12px sans-serif';
+  X.fillText(isMobile?'Тапай или води пальцем по экрану':'← → стрелки или A/D',W/2,H*0.54);
+
+  // Legend
+  X.font='13px sans-serif';
+  X.fillStyle='rgba(255,255,255,0.35)';
+  X.fillText('📸 нейрофото   🎬 нейровидео   🚫 спам',W/2,H*0.59);
+
+  // Button
+  const btnW=Math.min(220,W*0.6),btnH=52;
+  const btnX=W/2-btnW/2,btnY=H*0.66;
+  X.fillStyle='#a855f7';
+  rr(btnX,btnY,btnW,btnH,14);X.fill();
+  // Button shadow
+  X.fillStyle='rgba(168,85,247,0.3)';
+  rr(btnX+2,btnY+2,btnW,btnH,14);X.fill();
+  X.fillStyle='#a855f7';
+  rr(btnX,btnY,btnW,btnH,14);X.fill();
+  X.fillStyle='#fff';
+  X.font='bold 17px sans-serif';
+  X.fillText('Начать смену',W/2,btnY+33);
+
+  X.textAlign='left';
+}
+
+function drawCountdown(){
+  drawBg();
+  X.fillStyle='rgba(10,10,20,0.75)';X.fillRect(0,0,W,H);
+  X.textAlign='center';
+  X.fillStyle='#a855f7';
+  X.font='bold '+Math.min(110,W*0.28)+'px sans-serif';
+  const txt=countdownVal>0?String(countdownVal):'GO!';
+  X.fillText(txt,W/2,H/2+15);
+
+  if(countdownVal<=0){
+    X.fillStyle='rgba(255,255,255,0.3)';
+    X.font='400 16px sans-serif';
+    X.fillText('Лови заказы!',W/2,H/2+55);
+  }
+  X.textAlign='left';
+}
+
+function drawEnd(){
+  X.fillStyle='#0f0e1a';X.fillRect(0,0,W,H);
+
+  // Dots bg
+  X.fillStyle='rgba(168,85,247,0.05)';
+  for(let i=0;i<35;i++){
+    X.beginPath();X.arc(((i*137+50)%W),((i*89+30)%H),1.2,0,Math.PI*2);X.fill();
+  }
+
+  X.textAlign='center';
+
+  const topOff=H<700?H*0.06:H*0.1;
+
+  X.font='46px sans-serif';
+  X.fillText(currentLevel>=3?'🏆':currentLevel>=2?'⭐':'💪',W/2,topOff+40);
+
+  X.fillStyle='rgba(255,255,255,0.4)';
+  X.font='500 14px sans-serif';
+  X.fillText('Смена окончена!',W/2,topOff+75);
+
+  X.fillStyle='#34d399';
+  X.font='bold '+Math.min(40,W*0.095)+'px sans-serif';
+  X.fillText(money.toLocaleString('ru-RU')+' ₽',W/2,topOff+120);
+
+  // Stats
+  X.font='500 14px sans-serif';
+  X.fillStyle='#a78bfa';X.fillText(ordersCompleted+' заказов',W/2-65,topOff+155);
+  X.fillStyle='#f472b6';
+  const avg=ordersCompleted>0?Math.round(money/ordersCompleted):0;
+  X.fillText('~'+avg.toLocaleString('ru-RU')+' ₽/шт',W/2+65,topOff+155);
+
+  // Level
+  X.fillStyle=LEVELS[currentLevel].color;
+  X.font='bold 15px sans-serif';
+  X.fillText('Уровень: '+LEVELS[currentLevel].name,W/2,topOff+190);
+
+  // Result text
+  X.fillStyle='rgba(255,255,255,0.5)';
+  X.font='400 14px sans-serif';
+  const rLines=getResultLines();
+  rLines.forEach((l,i)=>X.fillText(l,W/2,topOff+220+i*21));
+
+  // CTA button
+  const btnW=Math.min(280,W*0.78),btnH=50;
+  const btnX=W/2-btnW/2,btnY=H*0.64;
+  X.fillStyle='#34d399';
+  rr(btnX,btnY,btnW,btnH,14);X.fill();
+  X.fillStyle='#fff';X.font='bold 15px sans-serif';
+  X.fillText('Хочу так зарабатывать',W/2,btnY+32);
+
+  // Replay
+  X.fillStyle='rgba(255,255,255,0.3)';
+  X.font='400 14px sans-serif';
+  X.fillText('Играть еще раз',W/2,btnY+btnH+28);
+
+  X.textAlign='left';
+}
+
+function getResultLines(){
+  if(currentLevel>=3) return [
+    'Ты дошел до уровня Эксперт!',
+    'Научим ловить такие заказы',
+    'по-настоящему на практикуме.'
+  ];
+  if(currentLevel>=2) return [
+    'Уже Специалист! Чеки растут.',
+    'На практикуме покажем, как',
+    'закрывать их нейросетями за минуты.'
+  ];
+  return [
+    'Хорошее начало! Даже новички',
+    'зарабатывают на нейроконтенте.',
+    'Покажем как на бесплатном практикуме.'
+  ];
+}
+
+// ===== MAIN LOOP =====
+function loop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.1);
+  lastTime=ts;
+
+  if(state==='start'){drawStart();requestAnimationFrame(loop);return;}
+
+  if(state==='countdown'){
+    drawCountdown();
+    if(Date.now()-countdownTimer>800){
+      countdownVal--;countdownTimer=Date.now();
+      if(countdownVal<0){
+        state='play';
+        playerVisualX=laneX(playerLane);
+        timerAcc=0;
+      }
+    }
+    requestAnimationFrame(loop);return;
+  }
+
+  if(state==='end'){drawEnd();requestAnimationFrame(loop);return;}
+
+  // ===== PLAY STATE =====
+  // Timer
+  timerAcc+=dt;
+  if(timerAcc>=1){timerAcc-=1;timeLeft--;if(timeLeft<=0){timeLeft=0;state='end';}}
+
+  // Difficulty ramp
+  if(timeLeft<40){spawnInterval=1.05;fallSpeed=2.6;}
+  if(timeLeft<25){spawnInterval=0.85;fallSpeed=3.1;}
+  if(timeLeft<12){spawnInterval=0.7;fallSpeed=3.6;}
+
+  // Spawn
+  spawnTimer+=dt;
+  if(spawnTimer>=spawnInterval){
+    spawnTimer=0;
+    spawnItem();
+    if(timeLeft<30&&Math.random()<0.25) setTimeout(()=>{if(state==='play')spawnItem();},200);
+  }
+
+  // Player smooth movement (dt-based)
+  const tgtX=laneX(playerLane);
+  const lerp=1-Math.pow(0.0001,dt); // dt-independent smoothing
+  playerVisualX+=(tgtX-playerVisualX)*lerp;
+
+  // Move & collide
+  const catchY=FLOOR_Y-25;
+
+  for(let i=items.length-1;i>=0;i--){
+    const it=items[i];
+    it.y+=it.speed*(60*dt);
+
+    // Catch zone
+    if(it.y>=catchY-22&&it.y<=catchY+18&&it.lane===playerLane){
+      if(it.isTrash){
+        lives--;
+        shakeTimer=0.3;
+        flashColor='rgba(239,68,68,0.25)';flashTimer=0.3;
+        comboCount=0;
+        vibrate(100);
+        items.splice(i,1);
+        if(lives<=0){state='end';}
+        continue;
+      }
+
+      // Caught!
+      const bonus=comboCount>=5?2:comboCount>=3?1.5:1;
+      const earned=Math.round(it.data.price*bonus);
+      money+=earned;
+      ordersCompleted++;
+      comboCount++;
+      comboTimer=2.5;
+      vibrate(30);
+
+      moneyPops.push({
+        x:it.x,y:catchY-35,
+        text:'+'+(earned>=1000?Math.round(earned/1000)+'к':earned)+' ₽'+(bonus>1?' x'+comboCount:''),
+        life:1,color:it.data.color
+      });
+
+      for(let j=0;j<5;j++){
+        sparkles.push({
+          x:it.x+(Math.random()-0.5)*26,y:catchY-15,
+          dx:(Math.random()-0.5)*3.5,dy:-Math.random()*3.5-1.5,
+          life:1,color:it.data.color
+        });
+      }
+
+      const newLv=getLevel();
+      if(newLv>currentLevel){
+        currentLevel=newLv;
+        levelUpTimer=2;
+        vibrate([50,30,50]);
+      }
+
+      items.splice(i,1);
+      continue;
+    }
+
+    // Fell through
+    if(it.y>FLOOR_Y+50){
+      if(!it.isTrash) comboCount=0;
+      items.splice(i,1);
+    }
+  }
+
+  // Combo decay
+  if(comboTimer>0){comboTimer-=dt;if(comboTimer<=0)comboCount=0;}
+
+  // Effect timers
+  shakeTimer=Math.max(0,shakeTimer-dt);
+  flashTimer=Math.max(0,flashTimer-dt);
+  levelUpTimer=Math.max(0,levelUpTimer-dt);
+
+  for(let i=moneyPops.length-1;i>=0;i--){
+    moneyPops[i].y-=1.8;moneyPops[i].life-=dt*1.1;
+    if(moneyPops[i].life<=0) moneyPops.splice(i,1);
+  }
+  for(let i=sparkles.length-1;i>=0;i--){
+    const sp=sparkles[i];
+    sp.x+=sp.dx;sp.y+=sp.dy;sp.dy+=4.5*dt;sp.life-=dt*2;
+    if(sp.life<=0) sparkles.splice(i,1);
+  }
+
+  // ===== DRAW =====
+  X.save();
+  if(shakeTimer>0){
+    X.translate((Math.random()-0.5)*6*shakeTimer,(Math.random()-0.5)*6*shakeTimer);
+  }
+
+  drawBg();
+
+  // Items
+  for(const it of items) drawItem(it);
+
+  // Player
+  drawPlayer();
+
+  // Flash
+  if(flashTimer>0){
+    X.globalAlpha=flashTimer/0.3;
+    X.fillStyle=flashColor;
+    X.fillRect(0,0,W,H);
+    X.globalAlpha=1;
+  }
+
+  // Money pops
+  X.textAlign='center';
+  for(const mp of moneyPops){
+    X.globalAlpha=Math.max(0,mp.life);
+    X.fillStyle=mp.color||'#34d399';
+    X.font='bold 22px sans-serif';
+    X.fillText(mp.text,mp.x,mp.y);
+  }
+  X.globalAlpha=1;
+
+  // Sparkles
+  for(const sp of sparkles){
+    X.globalAlpha=Math.max(0,sp.life);
+    X.fillStyle=sp.color;
+    X.beginPath();X.arc(sp.x,sp.y,2.5,0,Math.PI*2);X.fill();
+  }
+  X.globalAlpha=1;X.textAlign='left';
+
+  // Level up overlay
+  if(levelUpTimer>0.5){
+    const a=Math.min(1,(levelUpTimer-0.5)/0.5);
+    X.globalAlpha=a;
+    X.fillStyle='rgba(10,10,20,0.65)';X.fillRect(0,0,W,H);
+    X.textAlign='center';
+    X.fillStyle=LEVELS[currentLevel].color;
+    X.font='bold '+Math.min(22,W*0.055)+'px sans-serif';
+    X.fillText('УРОВЕНЬ ПОВЫШЕН!',W/2,H*0.37);
+    X.font='bold '+Math.min(30,W*0.075)+'px sans-serif';
+    X.fillText(LEVELS[currentLevel].name,W/2,H*0.44);
+    X.fillStyle='rgba(255,255,255,0.45)';
+    X.font='400 14px sans-serif';
+    const maxP=ORDER_TYPES.filter(o=>o.tier<=LEVELS[currentLevel].tier).reduce((m,o)=>Math.max(m,o.price),0);
+    X.fillText('Заказы до '+maxP.toLocaleString('ru-RU')+' ₽!',W/2,H*0.51);
+    X.globalAlpha=1;X.textAlign='left';
+  }
+
+  X.restore();
+
+  // HUD - always on top, no shake
+  drawHUD();
+  drawMobileControls();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
